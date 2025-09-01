@@ -145,13 +145,17 @@ app.post('/gpt/chat', async (req, res) => {
     try {
         // Handle both 'message' and 'prompt' fields for compatibility
         const message = req.body.message || req.body.prompt;
+        const userContext = req.body.userContext || '';
+        const userEmail = req.body.userEmail || '';
         
         // Add debug logging
         console.log('Received request:', {
             body: req.body,
             message: message,
             messageType: typeof message,
-            messageLength: message?.length
+            messageLength: message?.length,
+            userContext: userContext ? 'Present' : 'Not provided',
+            userEmail: userEmail
         });
         
         // Check if we have a valid message
@@ -175,8 +179,8 @@ app.post('/gpt/chat', async (req, res) => {
         console.log('OpenAI client available, making API call...');
         console.log('Message to send:', message);
 
-        // Create a prompt that mimics your custom GPT's behavior
-        const systemPrompt = `You are NeuroFuel GPT, a specialized health and wellness assistant for NeuroFuel app users. 
+        // Create a comprehensive system prompt with user context
+        let systemPrompt = `You are NeuroFuel GPT, a specialized health and wellness assistant for NeuroFuel app users. 
         
 Your role is to help with:
 - Nutrition and meal planning
@@ -187,6 +191,11 @@ Your role is to help with:
 - Metabolic health optimization
 
 Provide helpful, supportive, and evidence-based advice. Be encouraging and practical in your responses.`;
+
+        // Add user context if provided
+        if (userContext && userContext.trim()) {
+            systemPrompt += `\n\nUSER CONTEXT:\n${userContext}\n\nUse this context to provide personalized responses.`;
+        }
 
         console.log('System prompt:', systemPrompt);
 
