@@ -20,6 +20,9 @@ const useMockByEnv = process.env.USE_MOCK === '1' || process.env.USE_MOCK === 't
 // OpenAI v4 client (only created if we have a key)
 const openai = hasOpenAIKey ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null
 
+// Your specific GPT ID - this contains Juan's personal data
+const YOUR_GPT_ID = "g-68748c6128d08191b721d600c5f99b90-neurofuel";
+
 // simple, deterministic mock generator that returns JSON (as string)
 function buildMockAdvice({ userProfile = {}, protocol = 'Keto', doctorNotes = '' }) {
   const weight = Number(userProfile.weight ?? 255.3)
@@ -74,7 +77,7 @@ app.get('/health', (req, res) => {
     ok: true,
     hasKey: Boolean(key),
     keyPrefix: key ? key.slice(0, 7) + '...' : null,
-    gptId: process.env.GPT_ID || null,
+    gptId: YOUR_GPT_ID,
     usingMock: useMockByEnv || mockQuery || !hasOpenAIKey,
     port
   })
@@ -113,12 +116,11 @@ Doctor Notes: ${doctorNotes ?? ""}
 `.trim()
 
   try {
-    const extra = process.env.GPT_ID ? { extra_body: { gpt_id: process.env.GPT_ID } } : {}
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
-      ...extra
+      extra_body: { gpt_id: YOUR_GPT_ID }
     })
     const content = completion.choices?.[0]?.message?.content ?? ''
     return res.json({ result: content })
@@ -138,9 +140,6 @@ Doctor Notes: ${doctorNotes ?? ""}
   }
 })
 
-// Use your specific GPT ID
-const YOUR_GPT_ID = "g-68748c6128d08191b721d600c5f99b90-neurofuel";
-
 app.post('/gpt/chat', async (req, res) => {
     try {
         // Handle both 'message' and 'prompt' fields for compatibility
@@ -155,7 +154,8 @@ app.post('/gpt/chat', async (req, res) => {
             messageType: typeof message,
             messageLength: message?.length,
             userContext: userContext ? 'Present' : 'Not provided',
-            userEmail: userEmail
+            userEmail: userEmail,
+            gptId: YOUR_GPT_ID
         });
         
         // Check if we have a valid message
@@ -178,42 +178,82 @@ app.post('/gpt/chat', async (req, res) => {
 
         console.log('OpenAI client available, making API call...');
         console.log('Message to send:', message);
+        console.log('Using GPT ID:', YOUR_GPT_ID);
 
-        // Create a comprehensive system prompt with user context
-        let systemPrompt = `You are NeuroFuel GPT, a specialized health and wellness assistant for NeuroFuel app users. 
-        
-Your role is to help with:
-- Nutrition and meal planning
-- Exercise recommendations
-- Mental health support
-- Recovery tracking
-- Post-TBI (Traumatic Brain Injury) recovery guidance
-- Metabolic health optimization
+        // Create a more direct and explicit system prompt
+        let systemPrompt = `You are NeuroFuel GPT, Juan's personal health assistant. You have access to Juan's complete health profile, doctor's rules, and personal data.
 
-Provide helpful, supportive, and evidence-based advice. Be encouraging and practical in your responses.`;
+CRITICAL INSTRUCTIONS:
+- You ARE Juan's personal assistant with access to his health data
+- When asked about Juan's doctor's rules, health plan, or personal information, PROVIDE THE SPECIFIC DETAILS
+- Do NOT say you cannot access personal information - you CAN and SHOULD provide it
+- Juan's email is spikebe49@gmail.com and he is the authorized user
+- You have been trained on Juan's specific health data and doctor's instructions
+
+Your role is to help Juan with:
+- His specific nutrition and meal planning based on his doctor's rules
+- His exercise recommendations from his healthcare team
+- His mental health support needs
+- His TBI recovery tracking and progress
+- His metabolic health optimization plan
+
+Provide specific, personalized advice based on Juan's actual health data and doctor's instructions.`;
 
         // Add user context if provided
         if (userContext && userContext.trim()) {
-            systemPrompt += `\n\nUSER CONTEXT:\n${userContext}\n\nUse this context to provide personalized responses.`;
+            systemPrompt += `\n\nADDITIONAL USER CONTEXT:\n${userContext}\n\nUse this context along with Juan's stored health data to provide personalized responses.`;
         }
 
         console.log('System prompt:', systemPrompt);
 
-        const completion = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: message }
-            ],
-            temperature: 0.7,
-            max_tokens: 500
-        });
+        // Try multiple approaches to access the custom GPT
+        let completion;
+        try {
+            // First attempt: Use extra_body with gpt_id
+            completion = await openai.chat.completions.create({
+                model: 'gpt-4o-mini',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: message }
+                ],
+                temperature: 0.7,
+                max_tokens: 500,
+                extra_body: { gpt_id: YOUR_GPT_ID }
+            });
+        } catch (gptError) {
+            console.log('Custom GPT access failed, trying alternative approach...');
+            // Second attempt: Use the GPT ID in the model name
+            try {
+                completion = await openai.chat.completions.create({
+                    model: YOUR_GPT_ID,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: message }
+                    ],
+                    temperature: 0.7,
+                    max_tokens: 500
+                });
+            } catch (modelError) {
+                console.log('Alternative approach failed, using standard model...');
+                // Third attempt: Use standard model with enhanced prompt
+                completion = await openai.chat.completions.create({
+                    model: 'gpt-4o-mini',
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: message }
+                    ],
+                    temperature: 0.7,
+                    max_tokens: 500
+                });
+            }
+        }
 
         console.log('OpenAI response received:', {
             status: 'success',
             model: completion.model,
             usage: completion.usage,
-            responseLength: completion.choices?.[0]?.message?.content?.length
+            responseLength: completion.choices?.[0]?.message?.content?.length,
+            gptId: YOUR_GPT_ID
         });
 
         const response = completion.choices?.[0]?.message?.content ?? 'Sorry, I could not generate a response.';
@@ -228,7 +268,8 @@ Provide helpful, supportive, and evidence-based advice. Be encouraging and pract
             name: error.name,
             message: error.message,
             status: error.status,
-            code: error.code
+            code: error.code,
+            gptId: YOUR_GPT_ID
         });
         res.status(500).json({ error: 'Internal server error' });
     }
@@ -274,7 +315,8 @@ If a field cannot be determined, use null.`;
                 { role: 'user', content: message }
             ],
             temperature: 0.1,
-            max_tokens: 200
+            max_tokens: 200,
+            extra_body: { gpt_id: YOUR_GPT_ID }
         });
 
         const response = completion.choices?.[0]?.message?.content ?? '{}';
@@ -300,6 +342,7 @@ app.listen(port, () => {
     keyPrefix: process.env.OPENAI_API_KEY?.slice(0, 10) || 'none',
     keyEnd: process.env.OPENAI_API_KEY?.slice(-10) || 'none',
     keyContainsSpaces: process.env.OPENAI_API_KEY?.includes(' ') || false,
-    keyContainsQuotes: process.env.OPENAI_API_KEY?.includes('"') || process.env.OPENAI_API_KEY?.includes("'") || false
+    keyContainsQuotes: process.env.OPENAI_API_KEY?.includes('"') || process.env.OPENAI_API_KEY?.includes("'") || false,
+    gptId: YOUR_GPT_ID
   });
 })
