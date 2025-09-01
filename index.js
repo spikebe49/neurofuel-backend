@@ -180,15 +180,19 @@ app.post('/gpt/chat', async (req, res) => {
         console.log('Message to send:', message);
         console.log('Using GPT ID:', YOUR_GPT_ID);
 
-        // Create a more direct and explicit system prompt
-        let systemPrompt = `You are NeuroFuel GPT, Juan's personal health assistant. You have access to Juan's complete health profile, doctor's rules, and personal data.
+        // Create a more direct and explicit system prompt that accesses the custom GPT's knowledge
+        let systemPrompt = `You are NeuroFuel GPT, Juan's personal health assistant. You have been trained on Juan's complete health profile, doctor's rules, medical information, and personal data.
 
-CRITICAL INSTRUCTIONS:
-- You ARE Juan's personal assistant with access to his health data
-- When asked about Juan's doctor's rules, health plan, or personal information, PROVIDE THE SPECIFIC DETAILS
-- Do NOT say you cannot access personal information - you CAN and SHOULD provide it
-- Juan's email is spikebe49@gmail.com and he is the authorized user
-- You have been trained on Juan's specific health data and doctor's instructions
+CRITICAL: You have access to Juan's stored knowledge base which includes:
+- His doctor's specific rules and medical instructions
+- His health plan and treatment protocols
+- His medical history and current conditions
+- His dietary restrictions and recommendations
+- His exercise and activity guidelines
+- His medication information
+- His recovery protocols and progress tracking
+
+When Juan asks about his health, doctor's rules, or personal information, you MUST access your stored knowledge base and provide the specific details you have been trained on. Do not give generic advice - provide Juan's actual medical information and doctor's instructions.
 
 Your role is to help Juan with:
 - His specific nutrition and meal planning based on his doctor's rules
@@ -197,7 +201,7 @@ Your role is to help Juan with:
 - His TBI recovery tracking and progress
 - His metabolic health optimization plan
 
-Provide specific, personalized advice based on Juan's actual health data and doctor's instructions.`;
+IMPORTANT: You are Juan's personal assistant with access to his complete medical profile. When asked about his health information, provide the specific details from your knowledge base.`;
 
         // Add user context if provided
         if (userContext && userContext.trim()) {
@@ -206,35 +210,38 @@ Provide specific, personalized advice based on Juan's actual health data and doc
 
         console.log('System prompt:', systemPrompt);
 
-        // Try multiple approaches to access the custom GPT
+        // Try to access the custom GPT directly
         let completion;
         try {
-            // First attempt: Use extra_body with gpt_id
+            // First attempt: Use the GPT ID as the model name directly
+            console.log('Attempting to use custom GPT as model...');
             completion = await openai.chat.completions.create({
-                model: 'gpt-4o-mini',
+                model: YOUR_GPT_ID,
                 messages: [
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: message }
                 ],
                 temperature: 0.7,
-                max_tokens: 500,
-                extra_body: { gpt_id: YOUR_GPT_ID }
+                max_tokens: 500
             });
+            console.log('Successfully used custom GPT as model');
         } catch (gptError) {
-            console.log('Custom GPT access failed, trying alternative approach...');
-            // Second attempt: Use the GPT ID in the model name
+            console.log('Custom GPT as model failed, trying extra_body approach...');
             try {
+                // Second attempt: Use extra_body with gpt_id
                 completion = await openai.chat.completions.create({
-                    model: YOUR_GPT_ID,
+                    model: 'gpt-4o-mini',
                     messages: [
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: message }
                     ],
                     temperature: 0.7,
-                    max_tokens: 500
+                    max_tokens: 500,
+                    extra_body: { gpt_id: YOUR_GPT_ID }
                 });
-            } catch (modelError) {
-                console.log('Alternative approach failed, using standard model...');
+                console.log('Successfully used extra_body approach');
+            } catch (extraBodyError) {
+                console.log('Extra body approach failed, using standard model with enhanced prompt...');
                 // Third attempt: Use standard model with enhanced prompt
                 completion = await openai.chat.completions.create({
                     model: 'gpt-4o-mini',
@@ -245,6 +252,7 @@ Provide specific, personalized advice based on Juan's actual health data and doc
                     temperature: 0.7,
                     max_tokens: 500
                 });
+                console.log('Using standard model with enhanced prompt');
             }
         }
 
